@@ -106,6 +106,26 @@ var registry = []Provider{
 		Models:                []string{},
 	},
 	{
+		// GitHub Copilot's chat completions API has no published protocol for
+		// third-party clients, only a token the user already holds (from their
+		// own editor session, a CLI, or any other means they obtained it). OCR
+		// does not perform the GitHub OAuth device flow or the undocumented
+		// copilot_internal token exchange itself -- the user supplies a
+		// working Copilot session token as api_key, the same way as any other
+		// preset. Some Copilot accounts additionally require fixed headers
+		// (e.g. an editor/integration identifier) that OCR does not set by
+		// default, since there is no accurate value for a client that is not
+		// an approved editor integration -- see DefaultExtraHeaders docs and
+		// configure providers.github-copilot.extra_headers if your account
+		// needs them.
+		Name:        "github-copilot",
+		DisplayName: "GitHub Copilot",
+		Protocol:    ProtocolOpenAIChatCompletions,
+		BaseURL:     "https://api.githubcopilot.com",
+		EnvVar:      "GITHUB_COPILOT_TOKEN",
+		Models:      []string{},
+	},
+	{
 		Name:        "openai",
 		DisplayName: "OpenAI API",
 		Protocol:    ProtocolOpenAIChatCompletions,

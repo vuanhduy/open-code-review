@@ -47,6 +47,7 @@ provider instead uses the ChatGPT credentials created by `ocr auth login`.
 | `anthropic` | anthropic | `https://api.anthropic.com` | `ANTHROPIC_API_KEY` |
 | `bedrock` | anthropic-bedrock | derived from `aws_region` | — (AWS credential chain) |
 | `chatgpt` | openai-responses | `https://api.openai.com/v1` | not applicable (Sign in with ChatGPT) |
+| `github-copilot` | openai | `https://api.githubcopilot.com` | `GITHUB_COPILOT_TOKEN` |
 | `openai` | openai | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
 | `openai-responses` | openai-responses | `https://api.openai.com/v1` | `OPENAI_RESPONSES_API_KEY` |
 | `openrouter` | openai | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
@@ -91,6 +92,38 @@ ocr llm test
 ```
 
 The provider accepts explicit model values even if the account-specific catalog omits them. It accepts `extra_body` fields `reasoning`, `text` and `prompt_cache_key`; it rejects endpoint, protocol and credential overrides.
+
+## GitHub Copilot
+
+The `github-copilot` built-in provider points at Copilot's chat completions
+API (`https://api.githubcopilot.com`). Unlike `chatgpt`, OCR performs no
+sign-in flow for it: GitHub does not publish an OAuth or token-exchange API
+for third-party clients, so there is nothing for OCR to automate. You supply
+a Copilot session token you already hold — for example one your editor or
+another authorized Copilot client has obtained — as this provider's
+`api_key`, the same way as any other preset:
+
+```bash
+ocr config set provider                       github-copilot
+ocr config set model                          <model-slug>
+ocr config set providers.github-copilot.api_key "$GITHUB_COPILOT_TOKEN"
+ocr llm test
+```
+
+Copilot session tokens are short-lived; when yours expires, obtain a fresh
+one and update `providers.github-copilot.api_key` again (or export it as
+`GITHUB_COPILOT_TOKEN`, which the preset reads as a fallback).
+
+Some Copilot accounts reject requests that don't carry additional headers
+(for example an editor/integration identifier). OCR does not set any such
+headers by default — there is no header spec for third-party clients, and
+guessing values effectively impersonates an approved editor, which OCR
+intentionally avoids. If your token requires specific headers, set them
+yourself:
+
+```bash
+ocr config set providers.github-copilot.extra_headers 'Editor-Version=<value>,Copilot-Integration-Id=<value>'
+```
 
 ### Overriding a built-in provider's Base URL
 

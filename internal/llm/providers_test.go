@@ -10,7 +10,8 @@ import (
 )
 
 func TestLookupProvider_KnownProviders(t *testing.T) {
-	names := []string{"anthropic", "openai", "openrouter", "dashscope", "edenai", "chatgpt"}
+	names := []string{"anthropic", "openai", "openrouter", "dashscope", "edenai", "chatgpt", "github-copilot"}
+	emptyModelsAllowed := map[string]bool{"chatgpt": true, "github-copilot": true}
 	for _, name := range names {
 		p, ok := LookupProvider(name)
 		if !ok {
@@ -26,7 +27,7 @@ func TestLookupProvider_KnownProviders(t *testing.T) {
 		if p.BaseURL == "" {
 			t.Errorf("LookupProvider(%q).BaseURL is empty", name)
 		}
-		if len(p.Models) == 0 && name != "chatgpt" {
+		if len(p.Models) == 0 && !emptyModelsAllowed[name] {
 			t.Errorf("LookupProvider(%q).Models is empty", name)
 		}
 	}
@@ -42,6 +43,25 @@ func TestLookupProvider_ChatGPTDetails(t *testing.T) {
 	}
 	if p.Protocol != ProtocolOpenAIResponses || p.BaseURL != "https://api.openai.com/v1" || p.EnvVar != "" || !p.ExternalAuth || !p.RequiresStreaming || !p.RejectsSamplingParams || len(p.Models) != 0 {
 		t.Fatalf("unexpected chatgpt preset: %+v", p)
+	}
+}
+
+func TestLookupProvider_GitHubCopilotDetails(t *testing.T) {
+	p, ok := LookupProvider("github-copilot")
+	if !ok {
+		t.Fatal("github-copilot preset not found")
+	}
+	if p.Protocol != ProtocolOpenAIChatCompletions || p.BaseURL != "https://api.githubcopilot.com" || p.EnvVar != "GITHUB_COPILOT_TOKEN" {
+		t.Fatalf("unexpected github-copilot preset: %+v", p)
+	}
+	if p.ExternalAuth || p.AmbientAuth {
+		t.Fatalf("github-copilot must use a user-supplied api_key, not ExternalAuth/AmbientAuth: %+v", p)
+	}
+	if len(p.Models) != 0 {
+		t.Fatalf("github-copilot preset must not ship a hardcoded model list: %+v", p)
+	}
+	if len(p.DefaultExtraHeaders) != 0 {
+		t.Fatalf("github-copilot preset must not ship default headers that impersonate an approved client: %+v", p)
 	}
 }
 
@@ -89,7 +109,7 @@ func TestListProviders_Order(t *testing.T) {
 	if len(providers) < 3 {
 		t.Fatalf("expected at least 3 providers, got %d", len(providers))
 	}
-	expected := []string{"anthropic", "baidu-qianfan", "bedrock", "chatgpt", "dashscope", "dashscope-tokenplan", "deepseek", "edenai", "gemini", "hy-tokenplan", "iflytek", "kimi", "kimi-global", "litellm", "mimo", "minimax", "minimax-cn", "mistral", "novita", "ollama-cloud", "openai", "openai-responses", "openrouter", "siliconflow", "siliconflow-cn", "tencent-tokenhub", "volcengine", "xai", "z-ai", "z-ai-coding"}
+	expected := []string{"anthropic", "baidu-qianfan", "bedrock", "chatgpt", "dashscope", "dashscope-tokenplan", "deepseek", "edenai", "gemini", "github-copilot", "hy-tokenplan", "iflytek", "kimi", "kimi-global", "litellm", "mimo", "minimax", "minimax-cn", "mistral", "novita", "ollama-cloud", "openai", "openai-responses", "openrouter", "siliconflow", "siliconflow-cn", "tencent-tokenhub", "volcengine", "xai", "z-ai", "z-ai-coding"}
 	if len(providers) != len(expected) {
 		t.Fatalf("expected %d providers, got %d", len(expected), len(providers))
 	}
