@@ -1437,12 +1437,22 @@ func TestResolveEndpointWithModelOverride_AllBuiltInProvidersAcceptUnlistedModel
 			if err != nil || ep.Model != model || ep.Provider != provider.Name {
 				t.Fatalf("endpoint = %+v, error = %v", ep, err)
 			}
-			if provider.Name == "chatgpt" {
+			switch {
+			case provider.Name == "chatgpt":
 				if credentialCalls != 1 || !ep.ChatGPTPlan || !ep.RequiresStreaming || !ep.RejectsSamplingParams || ep.URL != chatgptauth.Resource || ep.Token != "siwc-fixture" || ep.ChatGPTAccount != "account-fixture" || stderr != "" {
 					t.Fatalf("endpoint = %+v, credential calls = %d, stderr = %q", ep, credentialCalls, stderr)
 				}
-			} else if strings.Count(stderr, "[ocr] WARNING: model") != 1 || !strings.Contains(stderr, fmt.Sprintf("for provider %q", provider.Name)) {
-				t.Errorf("stderr = %q, want one warning for %s", stderr, provider.Name)
+			case len(provider.Models) == 0:
+				// A preset with no suggested models (e.g. github-copilot, whose
+				// catalog varies per account) has nothing to compare the
+				// explicit model against, so the resolver has no warning to emit.
+				if stderr != "" {
+					t.Errorf("stderr = %q, want no warning for %s (preset has no suggested models)", stderr, provider.Name)
+				}
+			default:
+				if strings.Count(stderr, "[ocr] WARNING: model") != 1 || !strings.Contains(stderr, fmt.Sprintf("for provider %q", provider.Name)) {
+					t.Errorf("stderr = %q, want one warning for %s", stderr, provider.Name)
+				}
 			}
 		})
 	}
@@ -3081,4 +3091,36 @@ func registerTestPreset(t *testing.T, p Provider) {
 		registry = origRegistry
 		registryMap = origMap
 	})
+}
+
+func TestResolveEndpointWithOptions_GitHubCopilotPreset(t *testing.T) {
+	clearAllEnv(t)
+	t.Setenv("OCR_LLM_URL", "https://env.example.com/v1")
+	t.Setenv("OCR_LLM_TOKEN", "env-token")
+	path, _ := writeResolverConfig(t, configFile{
+		Provider: "github-copilot",
+		Providers: map[string]providerEntryConfig{
+			"github-copilot": {APIKey: "copilot-session-token", Model: "gpt-4o"},
+		},
+	})
+
+	ep, err := ResolveEndpointWithOptions(path, ResolveOptions{})
+	if err != nil {
+		t.Fatalf("ResolveEndpointWithOptions: %v", err)
+	}
+	if ep.URL != "https://api.githubcopilot.com" {
+		t.Errorf("ep.URL = %q", ep.URL)
+	}
+	if ep.Token != "copilot-session-token" {
+		t.Errorf("ep.Token = %q", ep.Token)
+	}
+	if ep.Protocol != ProtocolOpenAIChatCompletions {
+		t.Errorf("ep.Protocol = %q", ep.Protocol)
+	}
+	if ep.Model != "gpt-4o" {
+		t.Errorf("ep.Model = %q", ep.Model)
+	}
+	if len(ep.ExtraHeaders) != 0 {
+		t.Errorf("ep.ExtraHeaders = %+v, want none by default", ep.ExtraHeaders)
+	}
 }
