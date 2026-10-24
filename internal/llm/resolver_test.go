@@ -2937,3 +2937,148 @@ func TestResolveEndpointWithOptions_ConfigRequestTimeout(t *testing.T) {
 		t.Fatalf("ep.Timeout = %v, want config's 60s", ep.Timeout)
 	}
 }
+
+func TestMergeExtraHeaders(t *testing.T) {
+	tests := []struct {
+		name      string
+		defaults  map[string]string
+		overrides map[string]string
+		want      map[string]string
+	}{
+		{
+			name:     "no defaults returns overrides unchanged",
+			defaults: nil,
+			overrides: map[string]string{
+				"X-Custom": "value",
+			},
+			want: map[string]string{"X-Custom": "value"},
+		},
+		{
+			name: "default applies when no override",
+			defaults: map[string]string{
+				"Editor-Version": "preset/1.0",
+			},
+			overrides: nil,
+			want:      map[string]string{"Editor-Version": "preset/1.0"},
+		},
+		{
+			name: "user override replaces default by name, case-insensitively",
+			defaults: map[string]string{
+				"Editor-Version": "preset/1.0",
+			},
+			overrides: map[string]string{
+				"editor-version": "custom/2.0",
+			},
+			want: map[string]string{"editor-version": "custom/2.0"},
+		},
+		{
+			name: "unrelated default and override both survive",
+			defaults: map[string]string{
+				"Editor-Version": "preset/1.0",
+			},
+			overrides: map[string]string{
+				"X-Custom": "value",
+			},
+			want: map[string]string{"Editor-Version": "preset/1.0", "X-Custom": "value"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeExtraHeaders(tt.defaults, tt.overrides)
+			if len(got) != len(tt.want) {
+				t.Fatalf("mergeExtraHeaders() = %+v, want %+v", got, tt.want)
+			}
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Fatalf("mergeExtraHeaders() = %+v, want %+v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// TestResolveEndpointWithOptions_PresetDefaultHeaders registers a temporary
+// fake preset to exercise the tryProviderConfig wiring end-to-end, since no
+// shipped preset sets DefaultExtraHeaders. It restores the real registry
+// afterward so other tests are unaffected.
+func TestResolveEndpointWithOptions_PresetDefaultHeaders(t *testing.T) {
+	const fakeName = "test-preset-with-default-headers"
+	registerTestPreset(t, Provider{
+		Name:        fakeName,
+		DisplayName: "Test Preset",
+		Protocol:    ProtocolOpenAIChatCompletions,
+		BaseURL:     "https://preset.example.com/v1",
+		DefaultExtraHeaders: map[string]string{
+			"Editor-Version":         "preset/1.0",
+			"Copilot-Integration-Id": "preset-integration",
+		},
+	})
+
+	clearAllEnv(t)
+	t.Setenv("OCR_LLM_URL", "https://env.example.com/v1")
+	t.Setenv("OCR_LLM_TOKEN", "env-token")
+
+	t.Run("no user override uses preset defaults", func(t *testing.T) {
+		path, _ := writeResolverConfig(t, configFile{
+			Provider: fakeName,
+			Providers: map[string]providerEntryConfig{
+				fakeName: {APIKey: "fake-token", Model: "fake-model"},
+			},
+		})
+		ep, err := ResolveEndpointWithOptions(path, ResolveOptions{})
+		if err != nil {
+			t.Fatalf("ResolveEndpointWithOptions: %v", err)
+		}
+		want := map[string]string{"Editor-Version": "preset/1.0", "Copilot-Integration-Id": "preset-integration"}
+		if len(ep.ExtraHeaders) != len(want) {
+			t.Fatalf("ExtraHeaders = %+v, want %+v", ep.ExtraHeaders, want)
+		}
+		for k, v := range want {
+			if ep.ExtraHeaders[k] != v {
+				t.Fatalf("ExtraHeaders = %+v, want %+v", ep.ExtraHeaders, want)
+			}
+		}
+	})
+
+	t.Run("user extra_headers overrides preset default", func(t *testing.T) {
+		path, _ := writeResolverConfig(t, configFile{
+			Provider: fakeName,
+			Providers: map[string]providerEntryConfig{
+				fakeName: {
+					APIKey: "fake-token",
+					Model:  "fake-model",
+					ExtraHeaders: map[string]string{
+						"Editor-Version": "user/2.0",
+					},
+				},
+			},
+		})
+		ep, err := ResolveEndpointWithOptions(path, ResolveOptions{})
+		if err != nil {
+			t.Fatalf("ResolveEndpointWithOptions: %v", err)
+		}
+		if ep.ExtraHeaders["Editor-Version"] != "user/2.0" {
+			t.Fatalf("ExtraHeaders[Editor-Version] = %q, want %q", ep.ExtraHeaders["Editor-Version"], "user/2.0")
+		}
+		if ep.ExtraHeaders["Copilot-Integration-Id"] != "preset-integration" {
+			t.Fatalf("ExtraHeaders[Copilot-Integration-Id] = %q, want preset default to survive", ep.ExtraHeaders["Copilot-Integration-Id"])
+		}
+	})
+}
+
+// registerTestPreset temporarily adds p to the provider registry for the
+// duration of the calling test, restoring the original registry on cleanup.
+func registerTestPreset(t *testing.T, p Provider) {
+	t.Helper()
+	origRegistry := registry
+	origMap := registryMap
+	registry = append(append([]Provider{}, origRegistry...), p)
+	registryMap = make(map[string]Provider, len(registry))
+	for _, provider := range registry {
+		registryMap[strings.ToLower(provider.Name)] = provider
+	}
+	t.Cleanup(func() {
+		registry = origRegistry
+		registryMap = origMap
+	})
+}

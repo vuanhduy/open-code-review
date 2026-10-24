@@ -37,7 +37,15 @@ type Provider struct {
 	ExternalAuth          bool
 	RequiresStreaming     bool
 	RejectsSamplingParams bool
-	Models                []string
+
+	// DefaultExtraHeaders are HTTP headers the resolver sends on every
+	// request to this preset unless the user's own extra_headers config
+	// overrides them by name. Use this for headers a provider's API requires
+	// unconditionally (e.g. an integration identifier), not for anything the
+	// user is expected to choose themselves.
+	DefaultExtraHeaders map[string]string
+
+	Models []string
 }
 
 // After modifying the built-in provider registry, run `go generate ./internal/llm`
