@@ -582,6 +582,9 @@ func tryProviderConfig(cfg configFile, modelOverride string, callerContext conte
 
 	extraBody = entry.ExtraBody
 	extraHeaders := entry.ExtraHeaders
+	if isPreset && len(preset.DefaultExtraHeaders) > 0 {
+		extraHeaders = mergeExtraHeaders(preset.DefaultExtraHeaders, entry.ExtraHeaders)
+	}
 
 	timeout, err := ValidateTimeoutSec(entry.TimeoutSec)
 	if err != nil {
@@ -885,6 +888,31 @@ var reservedHeaders = map[string]bool{
 	"x-api-key":     true,
 	"content-type":  true,
 	"user-agent":    true,
+}
+
+// mergeExtraHeaders combines a preset's DefaultExtraHeaders with the user's
+// configured extra_headers, with the user's values taking precedence. The
+// comparison is case-insensitive (HTTP header names are not case-sensitive),
+// so a user override of "editor-version" replaces a default "Editor-Version"
+// rather than sending both. A nil result means no headers apply, matching
+// entry.ExtraHeaders's own zero value.
+func mergeExtraHeaders(defaults, overrides map[string]string) map[string]string {
+	if len(defaults) == 0 {
+		return overrides
+	}
+	merged := make(map[string]string, len(defaults)+len(overrides))
+	for k, v := range defaults {
+		merged[k] = v
+	}
+	for k, v := range overrides {
+		for existing := range merged {
+			if strings.EqualFold(existing, k) && existing != k {
+				delete(merged, existing)
+			}
+		}
+		merged[k] = v
+	}
+	return merged
 }
 
 // ParseExtraHeaders parses a string of comma-separated key=value pairs into a dictionary.
